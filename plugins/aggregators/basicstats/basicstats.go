@@ -42,7 +42,6 @@ type basicstats struct {
 	min   float64
 	max   float64
 	sum   float64
-	mean  float64
 	M2    float64 //intermedia value for variance/stdev
 }
 
@@ -78,7 +77,6 @@ func (m *BasicStats) Add(in telegraf.Metric) {
 					count: 1,
 					min:   fv,
 					max:   fv,
-					mean:  fv,
 					sum:   fv,
 					M2:    0.0,
 				}
@@ -94,7 +92,6 @@ func (m *BasicStats) Add(in telegraf.Metric) {
 						count: 1,
 						min:   fv,
 						max:   fv,
-						mean:  fv,
 						sum:   fv,
 						M2:    0.0,
 					}
@@ -103,20 +100,17 @@ func (m *BasicStats) Add(in telegraf.Metric) {
 
 				tmp := m.cache[id].fields[k]
 				//https://en.m.wikipedia.org/wiki/Algorithms_for_calculating_variance
+				//variance equation is heavily rearranged to avoid storing the
+				//mean while also not introducing more floating-point divides
 				//variable initialization
 				x := fv
-				mean := tmp.mean
-				M2 := tmp.M2
-				//counter compute
-				n := tmp.count + 1
-				tmp.count = n
-				//mean compute
-				delta := x - mean
-				mean = mean + delta/n
-				tmp.mean = mean
+				s := tmp.sum
+				n := tmp.count
 				//variance/stdev compute
-				M2 = M2 + delta*(x-mean)
-				tmp.M2 = M2
+				dist := x*n - s
+				tmp.M2 += dist * dist / (n * (n + 1))
+				//count compute
+				tmp.count++
 				//max/min compute
 				if fv < tmp.min {
 					tmp.min = fv
@@ -150,7 +144,7 @@ func (m *BasicStats) Push(acc telegraf.Accumulator) {
 				fields[k+"_max"] = v.max
 			}
 			if config.mean {
-				fields[k+"_mean"] = v.mean
+				fields[k+"_mean"] = (v.sum / v.count)
 			}
 			if config.sum {
 				fields[k+"_sum"] = v.sum
